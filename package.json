@@ -1,0 +1,12 @@
+{
+  "name": "neon-dash",
+  "version": "1.0.0",
+  "description": "A one-button neon arcade game",
+  "scripts": {
+    "dev": "npx serve .",
+    "pnpm": "pnpm exec serve ."
+  },
+  "devDependencies": {
+    "serve": "^14.2.0"
+  }
+}

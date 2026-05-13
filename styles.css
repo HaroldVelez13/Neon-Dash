@@ -1,0 +1,191 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background: #0a0a0f;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  overflow: hidden;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+}
+
+#game-container {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  max-width: 800px;
+  max-height: 600px;
+}
+
+#game-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 100%);
+}
+
+#ui-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  padding: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  pointer-events: none;
+}
+
+#score-display {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: #fff;
+  text-shadow: 0 0 10px #0ff, 0 0 20px #0ff;
+  font-size: 24px;
+  font-weight: bold;
+}
+
+#best-score {
+  font-size: 16px;
+  opacity: 0.8;
+}
+
+.icon-btn {
+  pointer-events: auto;
+  background: transparent;
+  border: 2px solid #0ff;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  font-size: 18px;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 0 10px #0ff;
+}
+
+.icon-btn:hover {
+  background: #0ff;
+  box-shadow: 0 0 20px #0ff, 0 0 40px #0ff;
+}
+
+.icon-btn.muted {
+  border-color: #ff0066;
+  box-shadow: 0 0 10px #ff0066;
+}
+
+.icon-btn.muted:hover {
+  background: #ff0066;
+  box-shadow: 0 0 20px #ff0066, 0 0 40px #ff0066;
+}
+
+.screen {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  background: rgba(10, 10, 15, 0.95);
+  z-index: 10;
+  transition: opacity 0.3s;
+}
+
+.screen.hidden {
+  display: none;
+}
+
+.neon-title {
+  font-size: 64px;
+  font-weight: bold;
+  color: #fff;
+  text-shadow: 
+    0 0 10px #0ff,
+    0 0 20px #0ff,
+    0 0 40px #0ff,
+    0 0 80px #0ff;
+  animation: flicker 2s infinite;
+  margin-bottom: 30px;
+}
+
+@keyframes flicker {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.95; }
+  52% { opacity: 1; }
+  54% { opacity: 0.9; }
+  56% { opacity: 1; }
+}
+
+.instructions {
+  color: #aaa;
+  font-size: 18px;
+  text-align: center;
+  line-height: 2;
+  margin-bottom: 40px;
+}
+
+.instructions span {
+  color: #0ff;
+  text-shadow: 0 0 10px #0ff;
+}
+
+.neon-btn {
+  background: transparent;
+  border: 3px solid #0ff;
+  color: #0ff;
+  padding: 15px 50px;
+  font-size: 20px;
+  font-weight: bold;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  transition: all 0.2s;
+  box-shadow: 0 0 10px #0ff, inset 0 0 10px #0ff;
+  border-radius: 5px;
+}
+
+.neon-btn:hover {
+  background: #0ff;
+  color: #0a0a0f;
+  box-shadow: 0 0 30px #0ff, inset 0 0 20px #0ff;
+}
+
+.game-over-title {
+  font-size: 48px;
+  font-weight: bold;
+  color: #ff0066;
+  text-shadow: 
+    0 0 10px #ff0066,
+    0 0 20px #ff0066,
+    0 0 40px #ff0066;
+  margin-bottom: 20px;
+}
+
+.final-score, .best-score-display {
+  color: #fff;
+  font-size: 24px;
+  margin-bottom: 10px;
+}
+
+.final-score span, .best-score-display span {
+  color: #0ff;
+  text-shadow: 0 0 10px #0ff;
+}
+
+.shake {
+  animation: shake 0.5s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-10px); }
+  20%, 40%, 60%, 80% { transform: translateX(10px); }
+}
