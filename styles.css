@@ -56,6 +56,18 @@ body {
   opacity: 0.8;
 }
 
+#combo-display {
+  font-size: 18px;
+  color: #ff0;
+  text-shadow: 0 0 10px #ff0, 0 0 20px #ff0;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+#combo-display.visible {
+  opacity: 1;
+}
+
 .icon-btn {
   pointer-events: auto;
   background: transparent;

@@ -11,6 +11,7 @@ const finalScoreEl = document.getElementById('final-score');
 const bestScoreDisplayEl = document.getElementById('best-score-display');
 const soundToggleBtn = document.getElementById('sound-toggle');
 const gameContainer = document.getElementById('game-container');
+const comboDisplay = document.getElementById('combo-display');
 
 let width, height;
 let animationId;
@@ -21,10 +22,30 @@ let bestScore = parseInt(localStorage.getItem('neonDashBestScore')) || 0;
 let gameRunning = false;
 let gameSpeed = 1;
 let soundEnabled = true;
+let scoreMultiplier = 1;
+let flashEffect = 0;
+let screenShake = 0;
 
 bestScoreEl.textContent = `BEST: ${bestScore}`;
 
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+function playScoreSound(points) {
+  if (!soundEnabled) return;
+  
+  const oscillator = audioCtx.createOscillator();
+  const gainNode = audioCtx.createGain();
+  
+  oscillator.connect(gainNode);
+  gainNode.connect(audioCtx.destination);
+  
+  oscillator.frequency.setValueAtTime(800 + (points * 100), audioCtx.currentTime);
+  oscillator.frequency.exponentialRampToValueAtTime(1200 + (points * 200), audioCtx.currentTime + 0.15);
+  gainNode.gain.setValueAtTime(0.15, audioCtx.currentTime);
+  gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+  oscillator.start(audioCtx.currentTime);
+  oscillator.stop(audioCtx.currentTime + 0.2);
+}
 
 function playSound(type) {
   if (!soundEnabled) return;
@@ -72,20 +93,24 @@ class Player {
     this.onGround = true;
     this.color = '#0ff';
     this.trail = [];
+    this.jumpCooldown = 0;
   }
 
   jump() {
-    if (this.onGround) {
+    if (this.onGround || this.jumpCooldown <= 0) {
       this.velocityY = this.jumpForce;
       this.onGround = false;
+      this.jumpCooldown = 5;
       playSound('jump');
-      createParticles(this.x + this.size / 2, this.y + this.size, 10, '#0ff');
+      createParticles(this.x + this.size / 2, this.y + this.size, 15, '#0ff', 2);
     }
   }
-
+  
   update() {
     this.velocityY += this.gravity;
     this.y += this.velocityY;
+    
+    if (this.jumpCooldown > 0) this.jumpCooldown--;
 
     if (this.y >= this.groundY - this.size) {
       this.y = this.groundY - this.size;
@@ -102,6 +127,8 @@ class Player {
       t.alpha -= 0.1;
     });
   }
+
+
 
   draw() {
     this.trail.forEach((t, i) => {
@@ -125,50 +152,55 @@ class Player {
 
 class Obstacle {
   constructor() {
-    this.width = 40 + Math.random() * 30;
-    this.height = 60 + Math.random() * 40;
+    this.width = 35 + Math.random() * 25;
+    this.height = 50 + Math.random() * 50;
     this.x = width;
     this.y = height - 100 - this.height;
     this.color = '#ff0066';
     this.passed = false;
+    this.pulse = 0;
   }
 
   update() {
     this.x -= gameSpeed * 8;
+    this.pulse += 0.1;
   }
 
   draw() {
+    const pulseGlow = Math.sin(this.pulse) * 10 + 20;
     ctx.shadowColor = this.color;
-    ctx.shadowBlur = 20;
+    ctx.shadowBlur = pulseGlow;
     ctx.fillStyle = this.color;
     ctx.fillRect(this.x, this.y, this.width, this.height);
-    
-    ctx.fillStyle = '#ff6699';
-    ctx.fillRect(this.x + 5, this.y + 5, this.width - 10, this.height - 10);
+
+    ctx.fillStyle = 'rgba(255, 102, 153, 0.6)';
+    ctx.fillRect(this.x + 3, this.y + 3, this.width - 6, this.height - 6);
   }
 }
 
 class Particle {
-  constructor(x, y, color) {
+  constructor(x, y, color, speedMult = 1) {
     this.x = x;
     this.y = y;
-    this.size = Math.random() * 5 + 2;
-    this.speedX = (Math.random() - 0.5) * 10;
-    this.speedY = (Math.random() - 0.5) * 10;
+    this.size = Math.random() * 6 + 3;
+    this.speedX = (Math.random() - 0.5) * 12 * speedMult;
+    this.speedY = (Math.random() - 0.5) * 12 * speedMult;
     this.color = color;
     this.life = 1;
-    this.decay = Math.random() * 0.03 + 0.02;
+    this.decay = Math.random() * 0.02 + 0.015;
+    this.gravity = 0.3;
   }
 
   update() {
     this.x += this.speedX;
     this.y += this.speedY;
+    this.speedY += this.gravity;
     this.life -= this.decay;
   }
 
   draw() {
     ctx.shadowColor = this.color;
-    ctx.shadowBlur = 10;
+    ctx.shadowBlur = 15;
     ctx.fillStyle = this.color;
     ctx.globalAlpha = this.life;
     ctx.fillRect(this.x, this.y, this.size, this.size);
@@ -181,6 +213,8 @@ let obstacles = [];
 let particles = [];
 let obstacleTimer = 0;
 let obstacleInterval = 100;
+let comboCount = 0;
+let comboTimer = 0;
 
 function resize() {
   const container = document.getElementById('game-container');
@@ -197,34 +231,34 @@ function resize() {
   }
 }
 
-function createParticles(x, y, count, color) {
+function createParticles(x, y, count, color, speedMult = 1) {
   for (let i = 0; i < count; i++) {
-    particles.push(new Particle(x, y, color));
+    particles.push(new Particle(x, y, color, speedMult));
   }
 }
 
-function shakeScreen() {
-  gameContainer.classList.add('shake');
-  setTimeout(() => {
-    gameContainer.classList.remove('shake');
-  }, 500);
+function shakeScreen(intensity = 10) {
+  screenShake = intensity;
 }
 
 function gameOver() {
   gameRunning = false;
   playSound('crash');
-  shakeScreen();
-  createParticles(player.x + player.size / 2, player.y + player.size / 2, 30, '#0ff');
-  
+  shakeScreen(15);
+  flashEffect = 0.5;
+  createParticles(player.x + player.size / 2, player.y + player.size / 2, 40, '#0ff', 2);
+
   if (score > bestScore) {
     bestScore = score;
     localStorage.setItem('neonDashBestScore', bestScore);
     bestScoreEl.textContent = `BEST: ${bestScore}`;
   }
-  
+
   finalScoreEl.textContent = score;
   bestScoreDisplayEl.textContent = bestScore;
-  gameOverScreen.classList.remove('hidden');
+  setTimeout(() => {
+    gameOverScreen.classList.remove('hidden');
+  }, 500);
 }
 
 function resetGame() {
@@ -234,6 +268,11 @@ function resetGame() {
   score = 0;
   gameSpeed = 1;
   obstacleTimer = 0;
+  scoreMultiplier = 1;
+  comboCount = 0;
+  comboTimer = 0;
+  flashEffect = 0;
+  screenShake = 0;
   scoreEl.textContent = score;
 }
 
@@ -246,13 +285,48 @@ function startGame() {
   requestAnimationFrame(gameLoop);
 }
 
+function showScorePopup(points, x, y) {
+  const popup = document.createElement('div');
+  popup.style.cssText = `
+    position: absolute;
+    left: ${x}px;
+    top: ${y}px;
+    color: #0ff;
+    font-size: ${Math.min(24 + points * 2, 40)}px;
+    font-weight: bold;
+    text-shadow: 0 0 10px #0ff, 0 0 20px #0ff;
+    pointer-events: none;
+    z-index: 100;
+    animation: scorePopup 0.8s ease-out forwards;
+  `;
+  popup.textContent = `+${points}`;
+  document.body.appendChild(popup);
+  setTimeout(() => popup.remove(), 800);
+}
+
 function gameLoop(currentTime) {
   if (!gameRunning) return;
   
   const deltaTime = currentTime - lastTime;
   lastTime = currentTime;
   
+  if (screenShake > 0) {
+    const shakeX = (Math.random() - 0.5) * screenShake;
+    const shakeY = (Math.random() - 0.5) * screenShake;
+    ctx.save();
+    ctx.translate(shakeX, shakeY);
+    screenShake *= 0.9;
+    if (screenShake < 0.5) screenShake = 0;
+  }
+
   ctx.clearRect(0, 0, width, height);
+
+  if (flashEffect > 0) {
+    ctx.fillStyle = `rgba(255, 255, 255, ${flashEffect})`;
+    ctx.fillRect(0, 0, width, height);
+    flashEffect *= 0.85;
+    if (flashEffect < 0.01) flashEffect = 0;
+  }
   
   const groundY = height - 100;
   const gradient = ctx.createLinearGradient(0, groundY - 5, 0, height);
@@ -266,12 +340,13 @@ function gameLoop(currentTime) {
   player.update();
   player.draw();
   
-  obstacleTimer++;
-  if (obstacleTimer > obstacleInterval / gameSpeed) {
-    obstacles.push(new Obstacle());
-    obstacleTimer = 0;
-    obstacleInterval = 60 + Math.random() * 60;
-  }
+obstacleTimer++;
+const currentInterval = Math.max(30, obstacleInterval / gameSpeed);
+if (obstacleTimer > currentInterval) {
+  obstacles.push(new Obstacle());
+  obstacleTimer = 0;
+  obstacleInterval = 50 + Math.random() * 50 - Math.min(score * 0.5, 20);
+}
   
   obstacles.forEach((obstacle, index) => {
     obstacle.update();
@@ -281,15 +356,19 @@ function gameLoop(currentTime) {
       obstacles.splice(index, 1);
     }
     
-    if (!obstacle.passed && obstacle.x + obstacle.width < player.x) {
-      obstacle.passed = true;
-      score++;
-      scoreEl.textContent = score;
-      playSound('score');
-      createParticles(obstacle.x, obstacle.y + obstacle.height / 2, 15, '#0ff');
-      
-      gameSpeed += 0.03;
-    }
+if (!obstacle.passed && obstacle.x + obstacle.width < player.x) {
+  obstacle.passed = true;
+  comboCount++;
+  comboTimer = 180;
+  const points = Math.min(comboCount, 5);
+  score += points;
+  scoreEl.textContent = score;
+  playScoreSound(points);
+  createParticles(obstacle.x + obstacle.width/2, obstacle.y + obstacle.height/2, 20, '#0ff', 1.5);
+  flashEffect = 0.15;
+
+  gameSpeed += 0.02 + (score * 0.001);
+}
     
     if (
       player.x < obstacle.x + obstacle.width &&
@@ -302,18 +381,36 @@ function gameLoop(currentTime) {
     }
   });
   
-  particles.forEach((particle, index) => {
-    particle.update();
-    particle.draw();
-    if (particle.life <= 0) {
-      particles.splice(index, 1);
-    }
-  });
+particles.forEach((particle, index) => {
+  particle.update();
+  particle.draw();
+  if (particle.life <= 0) {
+    particles.splice(index, 1);
+  }
+});
+
+if (comboTimer > 0) {
+  comboTimer--;
+  if (comboCount > 1) {
+    comboDisplay.textContent = `${comboCount}x COMBO!`;
+    comboDisplay.classList.add('visible');
+  }
+  if (comboTimer <= 0) {
+    comboCount = 0;
+    comboDisplay.classList.remove('visible');
+  }
+} else {
+  comboCount = 0;
+  comboDisplay.classList.remove('visible');
+}
   
   ctx.shadowBlur = 0;
   
   if (gameRunning) {
+    if (screenShake > 0) ctx.restore();
     requestAnimationFrame(gameLoop);
+  } else if (screenShake > 0) {
+    ctx.restore();
   }
 }
 
@@ -321,22 +418,28 @@ resize();
 window.addEventListener('resize', resize);
 
 startBtn.addEventListener('click', startGame);
-restartBtn.addEventListener('click', startGame);
+restartBtn.addEventListener('click', () => {
+  gameOverScreen.classList.add('hidden');
+  startGame();
+});
 
 document.addEventListener('keydown', (e) => {
   if (e.code === 'Space') {
     e.preventDefault();
     if (gameRunning) {
       player.jump();
-    } else if (!startScreen.classList.contains('hidden') || !gameOverScreen.classList.contains('hidden')) {
+    } else if (!startScreen.classList.contains('hidden')) {
+      startGame();
+    } else if (!gameOverScreen.classList.contains('hidden')) {
       startGame();
     }
   }
 });
 
-canvas.addEventListener('click', () => {
+canvas.addEventListener('click', (e) => {
   if (gameRunning) {
     player.jump();
+    e.preventDefault();
   }
 });
 
@@ -345,7 +448,7 @@ canvas.addEventListener('touchstart', (e) => {
   if (gameRunning) {
     player.jump();
   }
-});
+}, { passive: false });
 
 soundToggleBtn.addEventListener('click', () => {
   soundEnabled = !soundEnabled;
@@ -354,3 +457,18 @@ soundToggleBtn.addEventListener('click', () => {
 });
 
 startScreen.classList.remove('hidden');
+
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes scorePopup {
+    0% {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: translateY(-40px) scale(1.2);
+    }
+  }
+`;
+document.head.appendChild(style);
