@@ -10,6 +10,7 @@ const bestScoreEl = document.getElementById('best-score');
 const finalScoreEl = document.getElementById('final-score');
 const bestScoreDisplayEl = document.getElementById('best-score-display');
 const soundToggleBtn = document.getElementById('sound-toggle');
+const musicToggleBtn = document.getElementById('music-toggle');
 const gameContainer = document.getElementById('game-container');
 const comboDisplay = document.getElementById('combo-display');
 
@@ -25,6 +26,12 @@ let soundEnabled = true;
 let scoreMultiplier = 1;
 let flashEffect = 0;
 let screenShake = 0;
+let powerUpActive = null;
+let powerUpTimer = 0;
+let bgMusic = null;
+let musicPlaying = false;
+let musicInterval = null;
+let currentNote = 0;
 
 bestScoreEl.textContent = `BEST: ${bestScore}`;
 
@@ -41,7 +48,7 @@ function playScoreSound(points) {
   
   oscillator.frequency.setValueAtTime(800 + (points * 100), audioCtx.currentTime);
   oscillator.frequency.exponentialRampToValueAtTime(1200 + (points * 200), audioCtx.currentTime + 0.15);
-  gainNode.gain.setValueAtTime(0.15, audioCtx.currentTime);
+  gainNode.gain.setValueAtTime(0.25, audioCtx.currentTime);
   gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
   oscillator.start(audioCtx.currentTime);
   oscillator.stop(audioCtx.currentTime + 0.2);
@@ -49,24 +56,24 @@ function playScoreSound(points) {
 
 function playSound(type) {
   if (!soundEnabled) return;
-  
+
   const oscillator = audioCtx.createOscillator();
   const gainNode = audioCtx.createGain();
-  
+
   oscillator.connect(gainNode);
   gainNode.connect(audioCtx.destination);
-  
+
   if (type === 'jump') {
     oscillator.frequency.setValueAtTime(400, audioCtx.currentTime);
     oscillator.frequency.exponentialRampToValueAtTime(600, audioCtx.currentTime + 0.1);
-    gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+    gainNode.gain.setValueAtTime(0.2, audioCtx.currentTime);
     gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
     oscillator.start(audioCtx.currentTime);
     oscillator.stop(audioCtx.currentTime + 0.1);
   } else if (type === 'score') {
     oscillator.frequency.setValueAtTime(800, audioCtx.currentTime);
     oscillator.frequency.exponentialRampToValueAtTime(1200, audioCtx.currentTime + 0.15);
-    gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+    gainNode.gain.setValueAtTime(0.2, audioCtx.currentTime);
     gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
     oscillator.start(audioCtx.currentTime);
     oscillator.stop(audioCtx.currentTime + 0.15);
@@ -74,7 +81,7 @@ function playSound(type) {
     oscillator.type = 'sawtooth';
     oscillator.frequency.setValueAtTime(200, audioCtx.currentTime);
     oscillator.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.3);
-    gainNode.gain.setValueAtTime(0.2, audioCtx.currentTime);
+    gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
     gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
     oscillator.start(audioCtx.currentTime);
     oscillator.stop(audioCtx.currentTime + 0.3);
@@ -94,12 +101,15 @@ class Player {
     this.color = '#0ff';
     this.trail = [];
     this.jumpCooldown = 0;
+    this.jumpsLeft = 2;
+    this.maxJumps = 2;
   }
 
   jump() {
-    if (this.onGround || this.jumpCooldown <= 0) {
+    if (this.jumpsLeft > 0) {
       this.velocityY = this.jumpForce;
       this.onGround = false;
+      this.jumpsLeft--;
       this.jumpCooldown = 5;
       playSound('jump');
       createParticles(this.x + this.size / 2, this.y + this.size, 15, '#0ff', 2);
@@ -116,6 +126,7 @@ class Player {
       this.y = this.groundY - this.size;
       this.velocityY = 0;
       this.onGround = true;
+      this.jumpsLeft = this.maxJumps;
     }
 
     this.trail.push({ x: this.x, y: this.y, alpha: 0.8 });
@@ -159,6 +170,7 @@ class Obstacle {
     this.color = '#ff0066';
     this.passed = false;
     this.pulse = 0;
+    this.difficulty = 1 + (this.height / 100) + (this.width / 70);
   }
 
   update() {
@@ -175,6 +187,52 @@ class Obstacle {
 
     ctx.fillStyle = 'rgba(255, 102, 153, 0.6)';
     ctx.fillRect(this.x + 3, this.y + 3, this.width - 6, this.height - 6);
+    
+    // Difficulty indicator stripes
+    if (this.difficulty > 1.5) {
+      ctx.fillStyle = 'rgba(255, 255, 0, 0.3)';
+      ctx.fillRect(this.x + 10, this.y + 10, this.width - 20, this.height - 20);
+    }
+  }
+}
+
+class PowerUp {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.size = 25;
+    this.types = ['shield', 'slowmo', 'doubleScore'];
+    this.type = this.types[Math.floor(Math.random() * this.types.length)];
+    this.colors = {
+      shield: '#00ff00',
+      slowmo: '#ffff00',
+      doubleScore: '#ff00ff'
+    };
+    this.icons = { shield: '🛡️', slowmo: '⏱️', doubleScore: '⭐' };
+    this.collected = false;
+    this.pulse = 0;
+  }
+
+  update() {
+    this.x -= gameSpeed * 8;
+    this.pulse += 0.15;
+  }
+
+  draw() {
+    if (this.collected) return;
+    const glow = Math.sin(this.pulse) * 10 + 15;
+    ctx.shadowColor = this.colors[this.type];
+    ctx.shadowBlur = glow;
+    ctx.fillStyle = this.colors[this.type];
+    ctx.beginPath();
+    ctx.arc(this.x + this.size/2, this.y + this.size/2, this.size/2, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.fillStyle = '#fff';
+    ctx.font = '16px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(this.icons[this.type], this.x + this.size/2, this.y + this.size/2);
   }
 }
 
@@ -211,6 +269,7 @@ class Particle {
 let player;
 let obstacles = [];
 let particles = [];
+let powerUps = [];
 let obstacleTimer = 0;
 let obstacleInterval = 100;
 let comboCount = 0;
@@ -241,6 +300,28 @@ function shakeScreen(intensity = 10) {
   screenShake = intensity;
 }
 
+function activatePowerUp(type) {
+  powerUpActive = type;
+  powerUpTimer = 600; // 10 seconds at 60fps
+  
+  const messages = {
+    shield: '🛡️ SHIELD - Invincible!',
+    slowmo: '⏱️ SLOWMO - Time slows!',
+    doubleScore: '⭐ DOUBLE SCORE!'
+  };
+  
+  playScoreSound(3);
+  createParticles(player.x + player.size/2, player.y + player.size/2, 25, player.constructor.colors?.[type] || '#fff', 1.5);
+  
+  if (type === 'shield') {
+    // Shield logic handled in collision
+  } else if (type === 'slowmo') {
+    gameSpeed *= 0.7;
+  } else if (type === 'doubleScore') {
+    scoreMultiplier = 2;
+  }
+}
+
 function gameOver() {
   gameRunning = false;
   playSound('crash');
@@ -264,6 +345,7 @@ function gameOver() {
 function resetGame() {
   player = new Player();
   obstacles = [];
+  powerUps = [];
   particles = [];
   score = 0;
   gameSpeed = 1;
@@ -273,7 +355,15 @@ function resetGame() {
   comboTimer = 0;
   flashEffect = 0;
   screenShake = 0;
+  powerUpActive = null;
+  powerUpTimer = 0;
   scoreEl.textContent = score;
+  powerUpActive = null;
+  powerUpTimer = 0;
+}
+
+function updateJumpIndicator() {
+  playerEl.style.background = `linear-gradient(180deg, #0ff ${player.jumpsLeft * 50}%, transparent ${player.jumpsLeft * 50}%)`;
 }
 
 function startGame() {
@@ -282,6 +372,17 @@ function startGame() {
   startScreen.classList.add('hidden');
   gameOverScreen.classList.add('hidden');
   lastTime = performance.now();
+  
+  // Resume audio context on user interaction
+  if (audioCtx && audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+  
+  // Start music if enabled
+  if (musicPlaying) {
+    startMusic();
+  }
+  
   requestAnimationFrame(gameLoop);
 }
 
@@ -346,6 +447,11 @@ if (obstacleTimer > currentInterval) {
   obstacles.push(new Obstacle());
   obstacleTimer = 0;
   obstacleInterval = 50 + Math.random() * 50 - Math.min(score * 0.5, 20);
+  
+  // Spawn power-up occasionally (10% chance per obstacle)
+  if (Math.random() < 0.1 && score > 5) {
+    powerUps.push(new PowerUp(width, height - 150 - Math.random() * 100));
+  }
 }
   
   obstacles.forEach((obstacle, index) => {
@@ -360,8 +466,9 @@ if (!obstacle.passed && obstacle.x + obstacle.width < player.x) {
   obstacle.passed = true;
   comboCount++;
   comboTimer = 180;
-  const points = Math.min(comboCount, 5);
-  score += points;
+  const points = Math.min(comboCount, 5) * Math.ceil(obstacle.difficulty);
+  const multiplier = powerUpActive === 'doubleScore' ? 2 : 1;
+  score += points * multiplier;
   scoreEl.textContent = score;
   playScoreSound(points);
   createParticles(obstacle.x + obstacle.width/2, obstacle.y + obstacle.height/2, 20, '#0ff', 1.5);
@@ -370,17 +477,53 @@ if (!obstacle.passed && obstacle.x + obstacle.width < player.x) {
   gameSpeed += 0.02 + (score * 0.001);
 }
     
-    if (
-      player.x < obstacle.x + obstacle.width &&
-      player.x + player.size > obstacle.x &&
-      player.y < obstacle.y + obstacle.height &&
-      player.y + player.size > obstacle.y
-    ) {
-      gameOver();
-      return;
-    }
+if (
+  player.x < obstacle.x + obstacle.width &&
+  player.x + player.size > obstacle.x &&
+  player.y < obstacle.y + obstacle.height &&
+  player.y + player.size > obstacle.y
+) {
+  if (powerUpActive === 'shield') {
+    // Shield absorbs hit
+    powerUpActive = null;
+    powerUpTimer = 0;
+    shakeScreen(5);
+    createParticles(player.x + player.size/2, player.y + player.size/2, 20, '#00ff00', 2);
+    obstacles.splice(obstacles.indexOf(obstacle), 1);
+  } else {
+    gameOver();
+    return;
+  }
+}
   });
   
+powerUps.forEach((powerUp, index) => {
+  powerUp.update();
+  powerUp.draw();
+  
+  if (powerUp.collected) {
+    powerUps.splice(index, 1);
+    return;
+  }
+  
+  // Check collision with player
+  if (
+    player.x < powerUp.x + powerUp.size &&
+    player.x + player.size > powerUp.x &&
+    player.y < powerUp.y + powerUp.size &&
+    player.y + player.size > powerUp.y
+  ) {
+    powerUp.collected = true;
+    activatePowerUp(powerUp.type);
+    powerUps.splice(index, 1);
+  }
+  
+  // Remove if off screen
+  if (powerUp.x + powerUp.size < 0) {
+    powerUps.splice(index, 1);
+  }
+});
+
 particles.forEach((particle, index) => {
   particle.update();
   particle.draw();
@@ -402,6 +545,15 @@ if (comboTimer > 0) {
 } else {
   comboCount = 0;
   comboDisplay.classList.remove('visible');
+}
+
+// Power-up timer
+if (powerUpTimer > 0) {
+  powerUpTimer--;
+  if (powerUpTimer <= 0) {
+    powerUpActive = null;
+    scoreMultiplier = 1;
+  }
 }
   
   ctx.shadowBlur = 0;
@@ -472,3 +624,154 @@ style.textContent = `
   }
 `;
 document.head.appendChild(style);
+
+// Pixel Tune Lo-Fi Background Music
+const melody = [
+  // Melody line (high pitch, playful)
+  [523.25, 0, 150], [587.33, 150, 150], [659.25, 300, 150], [783.99, 450, 150],
+  [659.25, 600, 150], [587.33, 750, 150], [523.25, 900, 150], [493.88, 1050, 150],
+  [523.25, 1200, 150], [587.33, 1350, 150], [659.25, 1500, 150], [698.46, 1650, 150],
+  [783.99, 1800, 150], [698.46, 1950, 150], [659.25, 2100, 150], [587.33, 2250, 150],
+  // Bass line (low pitch, lo-fi warmth)
+  [130.81, 0, 300], [146.83, 300, 300], [164.81, 600, 300], [196.00, 900, 300],
+  [164.81, 1200, 300], [146.83, 1500, 300], [130.81, 1800, 300], [123.47, 2100, 300],
+  // Arpeggio (middle, adds depth)
+  [261.63, 75, 100], [329.63, 225, 100], [392.00, 375, 100], [523.25, 525, 100],
+  [392.00, 675, 100], [329.63, 825, 100], [261.63, 975, 100], [246.94, 1125, 100],
+  [261.63, 1275, 100], [329.63, 1425, 100], [392.00, 1575, 100], [349.23, 1725, 100],
+  [392.00, 1875, 100], [349.23, 2025, 100], [329.63, 2175, 100], [293.66, 2325, 100]
+];
+
+const bassLine = [
+  [130.81, 0, 400], [0, 400, 200],
+  [146.83, 600, 400], [0, 1000, 200],
+  [164.81, 1200, 400], [0, 1600, 200],
+  [196.00, 1800, 400], [0, 2200, 200]
+];
+
+function playNote(freq, startTime, duration, type = 'square', volume = 0.1) {
+  if (freq === 0) return;
+  
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  const filter = audioCtx.createBiquadFilter();
+  
+  osc.connect(filter);
+  filter.connect(gain);
+  gain.connect(audioCtx.destination);
+  
+  osc.type = type;
+  osc.frequency.value = freq;
+  
+  // Lo-fi filter
+  filter.type = 'lowpass';
+  filter.frequency.value = 2000;
+  
+  // Envelope with soft attack and release
+  const attackTime = 0.01;
+  const releaseTime = 0.1;
+  const holdTime = duration / 1000 - attackTime - releaseTime;
+  
+  gain.gain.setValueAtTime(0, startTime);
+  gain.gain.linearRampToValueAtTime(volume, startTime + attackTime);
+  gain.gain.setValueAtTime(volume, startTime + attackTime + holdTime);
+  gain.gain.linearRampToValueAtTime(0, startTime + duration / 1000);
+  
+  osc.start(startTime);
+  osc.stop(startTime + duration / 1000);
+}
+
+function playDrum(startTime, type) {
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  
+  if (type === 'kick') {
+    osc.frequency.setValueAtTime(150, startTime);
+    osc.frequency.exponentialRampToValueAtTime(0.01, startTime + 0.5);
+    gain.gain.setValueAtTime(0.3, startTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, startTime + 0.5);
+    osc.start(startTime);
+    osc.stop(startTime + 0.5);
+  } else if (type === 'hat') {
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(8000, startTime);
+    gain.gain.setValueAtTime(0.05, startTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, startTime + 0.05);
+    osc.start(startTime);
+    osc.stop(startTime + 0.05);
+  }
+}
+
+function initMusic() {
+  if (bgMusic) return;
+  bgMusic = { playing: false };
+}
+
+function startMusic() {
+  if (!audioCtx) return;
+  if (musicInterval) clearInterval(musicInterval);
+  
+  const tempo = 120;
+  const beatDuration = 60000 / tempo;
+  const loopLength = 2400; // ms per loop
+  
+  let loopStart = audioCtx.currentTime;
+  let loopCount = 0;
+  
+  function playLoop() {
+            const now = loopStart + (loopCount * loopLength / 1000);
+            
+            // Play melody notes
+            melody.forEach((note, idx) => {
+              playNote(note[0], now + note[1]/1000, note[2], 'square', 0.08);
+            });
+            
+            // Play bass
+            bassLine.forEach((note, idx) => {
+              playNote(note[0], now + note[1]/1000, note[2], 'triangle', 0.15);
+            });
+            
+            // Simple drum pattern
+            playDrum(now, 'kick');
+            playDrum(now + beatDuration/2000, 'hat');
+            playDrum(now + beatDuration/1000, 'kick');
+            playDrum(now + beatDuration*1.5/1000, 'hat');
+            
+            loopCount++;
+          }
+  
+  playLoop();
+  
+  // Loop every 2.4 seconds
+  musicInterval = setInterval(() => {
+    if (musicPlaying && gameRunning) {
+      playLoop();
+    }
+  }, loopLength);
+  
+  musicPlaying = true;
+}
+
+function toggleMusic() {
+  if (!bgMusic) {
+    initMusic();
+  }
+  
+  if (musicPlaying) {
+    if (musicInterval) clearInterval(musicInterval);
+    musicInterval = null;
+    musicPlaying = false;
+    musicToggleBtn.textContent = '🎵';
+  } else {
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
+    startMusic();
+    musicToggleBtn.textContent = '🎵';
+  }
+}
+
+musicToggleBtn.addEventListener('click', toggleMusic);

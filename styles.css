@@ -51,6 +51,33 @@ body {
   font-weight: bold;
 }
 
+#powerup-indicator {
+  position: absolute;
+  top: 80px;
+  left: 20px;
+  font-size: 18px;
+  font-weight: bold;
+  text-shadow: 0 0 10px currentColor;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+#powerup-indicator.visible {
+  opacity: 1;
+}
+
+#powerup-indicator.shield {
+  color: #00ff00;
+}
+
+#powerup-indicator.slowmo {
+  color: #ffff00;
+}
+
+#powerup-indicator.doubleScore {
+  color: #ff00ff;
+}
+
 #best-score {
   font-size: 16px;
   opacity: 0.8;
